@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+:root {
+  --background: #faf9f7;
+  --foreground: #1c1a17;
+  --primary: #3d2c1e;
+  --primary-light: #6b4f3a;
+  --accent: #c9a87c;
+  --accent-light: #e8d5b7;
+  --muted: #8a7968;
+  --border: #e5ddd0;
+  --card: #ffffff;
+  --success: #2d6a4f;
+  --error: #8b1a1a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--accent-light);
+  border-radius: 3px;
+}
+
+/* Watermark overlay */
+.watermark-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 60px,
+    rgba(255, 255, 255, 0.12) 60px,
+    rgba(255, 255, 255, 0.12) 61px
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.watermark-overlay::before {
+  content: "PREVIEW • PREVIEW • PREVIEW • PREVIEW • PREVIEW • PREVIEW";
+  position: absolute;
+  width: 200%;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: rgba(255, 255, 255, 0.35);
+  transform: rotate(-35deg) translateY(-50%);
+  top: 50%;
+  left: -50%;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  pointer-events: none;
+  user-select: none;
+}
+
+.watermark-overlay::after {
+  content: "PREVIEW • PREVIEW • PREVIEW • PREVIEW • PREVIEW • PREVIEW";
+  position: absolute;
+  width: 200%;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  color: rgba(255, 255, 255, 0.35);
+  transform: rotate(-35deg) translateY(80px);
+  top: 50%;
+  left: -50%;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Disable right-click context menu on preview images */
+.no-save {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
