@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
+import { dbGetPreviewById, dbUpdatePreview, dbGetOrderBySessionId, dbUpdateOrderBySessionId } from "@/lib/data";
 import { sendOrderConfirmation } from "@/lib/email";
 
 export const runtime = "nodejs";
@@ -27,8 +27,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  const supabase = createAdminClient();
-
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as {
       id: string;
@@ -41,41 +39,25 @@ export async function POST(req: Request) {
     const previewRequestId = session.metadata?.preview_request_id;
 
     if (previewRequestId) {
-      // Update order to paid
-      const { data: orderData } = await supabase
-        .from("orders")
-        .update({
-          status: "paid",
-          stripe_payment_intent_id: session.payment_intent ?? null,
-          shipping_name: session.shipping_details?.name ?? session.customer_details?.name ?? null,
-          shipping_address_json: session.shipping_details?.address ?? null,
-        })
-        .eq("stripe_checkout_session_id", session.id)
-        .select("product_name, preview_request_id")
-        .single();
+      await dbUpdateOrderBySessionId(session.id, {
+        status: "paid",
+        stripe_payment_intent_id: session.payment_intent ?? null,
+        shipping_name: session.shipping_details?.name ?? session.customer_details?.name ?? null,
+        shipping_address_json: session.shipping_details?.address ?? null,
+      });
 
-      // Mark preview request as ordered
-      await supabase
-        .from("preview_requests")
-        .update({ status: "ordered" })
-        .eq("id", previewRequestId);
+      await dbUpdatePreview(previewRequestId, { status: "ordered" });
 
-      // Send order confirmation email
-      if (orderData && session.customer_details?.email) {
-        const { data: previewReq } = await supabase
-          .from("preview_requests")
-          .select("customer_name, preview_token")
-          .eq("id", previewRequestId)
-          .single();
+      const orderData = await dbGetOrderBySessionId(session.id);
+      const previewReq = await dbGetPreviewById(previewRequestId);
 
-        if (previewReq) {
-          void sendOrderConfirmation({
-            customerName: previewReq.customer_name,
-            customerEmail: session.customer_details.email,
-            productName: orderData.product_name,
-            previewToken: previewReq.preview_token,
-          });
-        }
+      if (orderData && previewReq && session.customer_details?.email) {
+        void sendOrderConfirmation({
+          customerName: previewReq.customer_name,
+          customerEmail: session.customer_details.email,
+          productName: orderData.product_name,
+          previewToken: previewReq.preview_token,
+        });
       }
     }
   }

@@ -1,73 +1,42 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { dbGetPreviewByToken, dbUpdatePreview, dbCreateOrder } from "@/lib/data";
 import { createCheckoutSession } from "@/lib/stripe";
 import { getProduct } from "@/lib/products";
 
 export async function POST(req: Request) {
   try {
     const { productKey, previewToken } = await req.json();
-
-    if (!productKey || !previewToken) {
+    if (!productKey || !previewToken)
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
 
     const product = getProduct(productKey);
-    if (!product) {
-      return NextResponse.json({ error: "Invalid product" }, { status: 400 });
-    }
+    if (!product) return NextResponse.json({ error: "Invalid product" }, { status: 400 });
 
-    const supabase = createAdminClient();
+    const preview = await dbGetPreviewByToken(previewToken);
+    if (!preview) return NextResponse.json({ error: "Preview not found" }, { status: 404 });
 
-    // Fetch preview request
-    const { data: previewRequest, error: fetchError } = await supabase
-      .from("preview_requests")
-      .select("id, customer_email, status, preview_token")
-      .eq("preview_token", previewToken)
-      .single();
+    if (preview.status !== "ready")
+      return NextResponse.json({ error: "Preview is not ready for purchase" }, { status: 400 });
 
-    if (fetchError || !previewRequest) {
-      return NextResponse.json({ error: "Preview not found" }, { status: 404 });
-    }
-
-    if (previewRequest.status !== "ready") {
-      return NextResponse.json(
-        { error: "Preview is not ready for purchase" },
-        { status: 400 }
-      );
-    }
-
-    // Create Stripe session (or dev-mode stub)
     const { url, sessionId, devMode } = await createCheckoutSession({
       product,
-      previewRequestId: previewRequest.id,
+      previewRequestId: preview.id,
       previewToken,
-      customerEmail: previewRequest.customer_email,
+      customerEmail: preview.customer_email,
     });
 
-    // Create order record
-    const { data: order } = await supabase
-      .from("orders")
-      .insert({
-        preview_request_id: previewRequest.id,
-        customer_email: previewRequest.customer_email,
-        product_key: product.key,
-        product_name: product.name,
-        product_price: product.pricePence,
-        currency: "gbp",
-        status: devMode ? "created" : "created",
-        stripe_checkout_session_id: sessionId ?? null,
-      })
-      .select("id")
-      .single();
+    const order = await dbCreateOrder({
+      preview_request_id: preview.id,
+      customer_email: preview.customer_email,
+      product_key: product.key,
+      product_name: product.name,
+      product_price: product.pricePence,
+      stripe_checkout_session_id: sessionId,
+    });
 
     if (devMode) {
-      // In dev mode, mark request as ordered immediately
-      await supabase
-        .from("preview_requests")
-        .update({ status: "ordered" })
-        .eq("id", previewRequest.id);
-
-      return NextResponse.json({ devMode: true, orderId: order?.id });
+      await dbUpdatePreview(preview.id, { status: "ordered" });
+      return NextResponse.json({ devMode: true, orderId: order.id });
     }
 
     return NextResponse.json({ url, sessionId });

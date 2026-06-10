@@ -1,5 +1,5 @@
 import { requireAdminAuth } from "@/lib/admin-auth";
-import { createAdminClient } from "@/lib/supabase/server";
+import { dbGetPreviewById } from "@/lib/data";
 import { AdminRequestDetail } from "@/components/admin/AdminRequestDetail";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
@@ -19,15 +19,9 @@ export default async function AdminRequestDetailPage({ params }: PageProps) {
   await requireAdminAuth();
 
   const { id } = await params;
-  const supabase = createAdminClient();
+  const data = await dbGetPreviewById(id);
 
-  const { data, error } = await supabase
-    .from("preview_requests")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (error || !data) notFound();
+  if (!data) notFound();
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { createAdminClient } from "@/lib/supabase/server";
+import { dbGetPreviewByToken } from "@/lib/data";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { PreviewClient } from "./PreviewClient";
@@ -9,12 +9,11 @@ interface PageProps {
   params: Promise<{ token: string }>;
 }
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { token } = await params;
+export async function generateMetadata(_props: PageProps): Promise<Metadata> {
   return {
-    title: `Your Artwork Preview — Place Portraits`,
+    title: "Your Artwork Preview — Place Portraits",
     description: "Your personalised home artwork preview is ready. Preview before you buy.",
-    robots: { index: false }, // Don't index individual preview pages
+    robots: { index: false },
   };
 }
 
@@ -22,17 +21,8 @@ export const dynamic = "force-dynamic";
 
 export default async function PreviewPage({ params }: PageProps) {
   const { token } = await params;
-  const supabase = createAdminClient();
-
-  const { data, error } = await supabase
-    .from("preview_requests")
-    .select("*")
-    .eq("preview_token", token)
-    .single();
-
-  if (error || !data) {
-    notFound();
-  }
+  const data = await dbGetPreviewByToken(token);
+  if (!data) notFound();
 
   return (
     <>

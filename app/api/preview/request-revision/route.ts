@@ -1,19 +1,15 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { dbGetPreviewByToken, dbUpdatePreview } from "@/lib/data";
 
 export async function POST(req: Request) {
   try {
     const { token } = await req.json();
     if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
 
-    const supabase = createAdminClient();
-    const { error } = await supabase
-      .from("preview_requests")
-      .update({ status: "revision_requested" })
-      .eq("preview_token", token);
+    const preview = await dbGetPreviewByToken(token);
+    if (!preview) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    if (error) throw error;
-
+    await dbUpdatePreview(preview.id, { status: "revision_requested" });
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[revision] Error:", err);

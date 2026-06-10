@@ -2,7 +2,7 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Button } from "@/components/ui/Button";
-import { createAdminClient } from "@/lib/supabase/server";
+import { dbGetOrderBySessionId } from "@/lib/data";
 import { getProduct } from "@/lib/products";
 import type { Metadata } from "next";
 
@@ -27,12 +27,7 @@ export default async function CheckoutSuccessPage({ searchParams }: PageProps) {
   let productName = devProduct?.name ?? "your artwork";
   if (!isDevMode && params.session_id) {
     try {
-      const supabase = createAdminClient();
-      const { data: order } = await supabase
-        .from("orders")
-        .select("product_name, preview_request_id")
-        .eq("stripe_checkout_session_id", params.session_id)
-        .single();
+      const order = await dbGetOrderBySessionId(params.session_id);
       if (order?.product_name) productName = order.product_name;
     } catch {
       // Non-critical — continue showing generic success
