@@ -6,6 +6,7 @@ import { generateArtworkPreview } from "@/lib/gemini/generateArtwork";
 import { sendPreviewRequestReceived, notifyAdminNewRequest } from "@/lib/email";
 import type { ArtStyle } from "@/types";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -45,12 +46,10 @@ export async function createPreviewAction(
   }
   if (!photo || photo.size === 0) {
     fieldErrors.photo = "Please upload a house photo.";
-  } else {
-    if (!ALLOWED_TYPES.includes(photo.type)) {
-      fieldErrors.photo = "Please upload a JPG, PNG or WebP image.";
-    } else if (photo.size > MAX_FILE_SIZE) {
-      fieldErrors.photo = "Image must be under 15 MB.";
-    }
+  } else if (!ALLOWED_TYPES.includes(photo.type)) {
+    fieldErrors.photo = "Please upload a JPG, PNG or WebP image.";
+  } else if (photo.size > MAX_FILE_SIZE) {
+    fieldErrors.photo = "Image must be under 15 MB.";
   }
 
   if (Object.keys(fieldErrors).length > 0) {
@@ -59,7 +58,7 @@ export async function createPreviewAction(
 
   const supabase = createAdminClient();
 
-  // ── Upload original photo to Supabase Storage ─────────────────────────────
+  // ── Upload original photo ─────────────────────────────────────────────────
   const photoBuffer = Buffer.from(await photo!.arrayBuffer());
   const ext = photo!.type.split("/")[1] ?? "jpg";
   const token = generatePreviewToken();
@@ -67,24 +66,21 @@ export async function createPreviewAction(
 
   const { error: uploadError } = await supabase.storage
     .from("house-uploads")
-    .upload(storagePath, photoBuffer, {
-      contentType: photo!.type,
-      upsert: false,
-    });
+    .upload(storagePath, photoBuffer, { contentType: photo!.type, upsert: false });
 
   if (uploadError) {
     console.error("[create] Storage upload failed:", uploadError.message);
     return { error: "We couldn't upload your photo. Please try again." };
   }
 
-  // Build a signed URL (1 hour) for the Gemini call; store it temporarily
+  // Signed URL so the generation function can fetch the image (1-hour window)
   const { data: signedUrlData } = await supabase.storage
     .from("house-uploads")
     .createSignedUrl(storagePath, 3600);
 
   const originalImageUrl = signedUrlData?.signedUrl ?? "";
 
-  // ── Create preview_request record ────────────────────────────────────────
+  // ── Insert preview_request record ─────────────────────────────────────────
   const { data: requestData, error: insertError } = await supabase
     .from("preview_requests")
     .insert({
@@ -112,16 +108,17 @@ export async function createPreviewAction(
 
   const requestId = requestData.id;
 
-  // ── Send receipt email (non-blocking) ─────────────────────────────────────
-  void sendPreviewRequestReceived({ customerName, customerEmail });
-  void notifyAdminNewRequest({ customerName, customerEmail, requestId });
+  // ── Schedule post-response work via after() ───────────────────────────────
+  // after() runs after the redirect response is sent to the browser, so the
+  // customer lands on the preview page immediately while generation happens.
+  after(async () => {
+    // Send emails
+    await Promise.allSettled([
+      sendPreviewRequestReceived({ customerName, customerEmail }),
+      notifyAdminNewRequest({ customerName, customerEmail, requestId }),
+    ]);
 
-  // ── Trigger generation ────────────────────────────────────────────────────
-  // For MVP: synchronous generation. The page will show a generating state
-  // and poll for completion. If generation is slow, the customer can
-  // return via the preview link in their email.
-  // TODO: Move to a background job queue for production.
-  void (async () => {
+    // Run generation
     const result = await generateArtworkPreview({
       previewRequestId: requestId,
       originalImageUrl,
@@ -152,8 +149,7 @@ export async function createPreviewAction(
         })
         .eq("id", requestId);
     }
-  })();
+  });
 
-  // ── Redirect to preview page ──────────────────────────────────────────────
   redirect(`/preview/${token}`);
 }
